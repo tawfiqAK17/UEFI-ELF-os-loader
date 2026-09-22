@@ -6,7 +6,8 @@ OBJCOPY  = objcopy
 
 INC_DIRS = -I$(GNUEFI_DIR)/inc \
            -I$(GNUEFI_DIR)/inc/x86_64 \
-           -I$(GNUEFI_DIR)/inc/protocol
+           -I$(GNUEFI_DIR)/inc/protocol \
+					 -I$(ELF_DIR)
 
 LIB_DIRS = -L$(GNUEFI_DIR)/x86_64/lib \
            -L$(GNUEFI_DIR)/x86_64/gnuefi
@@ -26,7 +27,7 @@ TARGET = BOOTX64.EFI
 
 all: $(TARGET)
 
-%.o: %.c
+$(OBJ): $(SRC)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(SO): $(OBJ)
