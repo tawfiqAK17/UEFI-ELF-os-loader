@@ -1,3 +1,4 @@
+#include "efibind.h"
 #include "efidef.h"
 #include "efierr.h"
 #include "elf_parser.h"
@@ -5,9 +6,17 @@
 #include <efilib.h>
 #include <elf.h>
 
-EFI_STATUS load_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
-                  UINT64 p_memsz, VOID *kernel_pages,
-                  EFI_PHYSICAL_ADDRESS *out_ph_addr);
+EFI_STATUS load_and_map_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
+                                UINT64 p_memsz, VOID *kernel_pages,
+                                EFI_VIRTUAL_ADDRESS virtual_addr);
+
+EFI_STATUS initialize_pagging_tables(EFI_PHYSICAL_ADDRESS *pml4,
+                                     EFI_PHYSICAL_ADDRESS *pdpt,
+                                     EFI_PHYSICAL_ADDRESS *pd,
+                                     EFI_PHYSICAL_ADDRESS *pt);
+
+EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS physical_addr,
+                           EFI_VIRTUAL_ADDRESS virtual_addr, UINT8 flags);
 EFI_STATUS
 EFIAPI
 efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
@@ -53,6 +62,12 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
   uefi_call_wrapper(kernel_file->Read, 3, kernel_file, &kernel_file_size,
                     (VOID *)kernel_pages);
 
+  EFI_PHYSICAL_ADDRESS pml4;
+  EFI_PHYSICAL_ADDRESS pdpt;
+  EFI_PHYSICAL_ADDRESS pd;
+  EFI_PHYSICAL_ADDRESS pt;
+  initialize_pagging_tables(&pml4, &pdpt, &pd, &pt);
+
   unsigned char elf_class = class((void *)kernel_pages);
   Elf64_Off elf_ph_off = ph_off((void *)kernel_pages);
   Elf64_Half elf_ph_ent_size = ph_ent_size((void *)kernel_pages);
@@ -64,44 +79,76 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     EFI_PHYSICAL_ADDRESS ph_addr;
     if (elf_class == ELFCLASS32) {
       Elf32_Phdr *ph = (Elf32_Phdr *)current_ph;
-      load_segment(ph->p_type, ph->p_offset, ph->p_filesz, ph->p_memsz,
-                   (VOID *)kernel_pages, &ph_addr);
+      load_and_map_segment(ph->p_type, ph->p_offset, ph->p_filesz, ph->p_memsz,
+                           (VOID *)kernel_pages, ph->p_vaddr);
     }
 
     if (elf_class == ELFCLASS64) {
       Elf64_Phdr *ph = (Elf64_Phdr *)current_ph;
-      load_segment(ph->p_type, ph->p_offset, ph->p_filesz, ph->p_memsz,
-                   (VOID *)kernel_pages, &ph_addr);
+      load_and_map_segment(ph->p_type, ph->p_offset, ph->p_filesz, ph->p_memsz,
+                           (VOID *)kernel_pages, ph->p_vaddr);
     }
-    
-    //TODO: add the invalide class case
 
+    // TODO: add the invalide class case
   }
 
   return EFI_SUCCESS;
 }
 
-EFI_STATUS load_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
-                  UINT64 p_memsz, VOID *kernel_pages,
-                  EFI_PHYSICAL_ADDRESS *out_ph_addr) {
+EFI_STATUS initialize_pagging_tables(EFI_PHYSICAL_ADDRESS *pml4,
+                                     EFI_PHYSICAL_ADDRESS *pdpt,
+                                     EFI_PHYSICAL_ADDRESS *pd,
+                                     EFI_PHYSICAL_ADDRESS *pt) {
+
+  uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, 1,
+                    pml4);
+  uefi_call_wrapper(BS->SetMem, 3, pml4, EFI_PAGE_SIZE, 0);
+
+  uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, 1,
+                    pdpt);
+  uefi_call_wrapper(BS->SetMem, 3, pdpt, EFI_PAGE_SIZE, 0);
+
+  uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, 1,
+                    pd);
+  uefi_call_wrapper(BS->SetMem, 3, pd, EFI_PAGE_SIZE, 0);
+
+  uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, 1,
+                    pt);
+  uefi_call_wrapper(BS->SetMem, 3, pt, EFI_PAGE_SIZE, 0);
+
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS load_and_map_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
+                                UINT64 p_memsz, VOID *kernel_pages,
+                                EFI_VIRTUAL_ADDRESS virtual_addr) {
   if (p_type != PT_LOAD)
     return EFI_SUCCESS;
 
   if (p_memsz == 0)
     return EFI_SUCCESS;
 
+  UINT64 offset = virtual_addr & EFI_PAGE_MASK;
+  UINTN pages = EFI_SIZE_TO_PAGES(p_memsz + offset);
+
   EFI_PHYSICAL_ADDRESS ph_addr;
 
   uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData,
-                    EFI_SIZE_TO_PAGES(p_memsz), &ph_addr);
+                    pages, &ph_addr);
 
-  CopyMem((VOID *)ph_addr, (VOID *)((UINT8 *)kernel_pages + p_offset),
-          p_filesz);
+  uefi_call_wrapper(BS->SetMem, 3, (VOID *)(ph_addr), pages * EFI_PAGE_SIZE, 0);
 
-  if (p_memsz > p_filesz) {
-    uefi_call_wrapper(BS->SetMem, 3, (VOID *)(ph_addr + p_filesz),
-                      p_memsz - p_filesz, 0);
+  uefi_call_wrapper(BS->CopyMem, 3, (VOID *)(ph_addr + offset),
+                    (VOID *)((UINT8 *)kernel_pages + p_offset), p_filesz);
+
+  EFI_VIRTUAL_ADDRESS first_page_vert_addr = virtual_addr & ~EFI_PAGE_MASK;
+
+  for (UINTN i = 0; i < pages; i++) {
+    insert_pt_entry(ph_addr + (i * EFI_PAGE_SIZE),
+                    first_page_vert_addr + (i * EFI_PAGE_SIZE), 0);
   }
-  *out_ph_addr = ph_addr;
   return EFI_SUCCESS;
 }
+
+EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS physical_addr,
+                           EFI_VIRTUAL_ADDRESS virtual_addr, UINT8 flags) {}
