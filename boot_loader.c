@@ -191,7 +191,7 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     LOG_ERROR(L"failed to locat simple text output protocol, status code: %u",
               status);
   }
-  
+
   return EFI_SUCCESS;
 }
 
@@ -262,7 +262,7 @@ EFI_STATUS load_and_map_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
   for (UINTN i = 0; i < pages; i++) {
     LOG_DEBUG(L"mapping page number %d/%d", i + 1, pages);
     status = insert_pt_entry(pml4, ph_addr + (i * EFI_PAGE_SIZE),
-                             first_page_vert_addr + (i * EFI_PAGE_SIZE), 0);
+                             first_page_vert_addr + (i * EFI_PAGE_SIZE), P | R_W);
     if (EFI_ERROR(status)) {
       return status;
     }
