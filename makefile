@@ -4,6 +4,8 @@ CC       = gcc
 LD       = ld
 OBJCOPY  = objcopy
 
+LOG_LEVEL?=_ERROR
+
 INC_DIRS = -I$(GNUEFI_DIR)/inc \
            -I$(GNUEFI_DIR)/inc/x86_64 \
            -I$(GNUEFI_DIR)/inc/protocol \
@@ -15,7 +17,7 @@ LIB_DIRS = -L$(GNUEFI_DIR)/x86_64/lib \
 CRT0 = $(GNUEFI_DIR)/x86_64/gnuefi/crt0-efi-x86_64.o
 LDS  = $(GNUEFI_DIR)/gnuefi/elf_x86_64_efi.lds
 
-CFLAGS  = $(INC_DIRS) -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
+CFLAGS  = $(INC_DIRS) -DLOG_LEVEL=$(LOG_LEVEL) -fpic -ffreestanding -fno-stack-protector -fno-stack-check \
           -fshort-wchar -mno-red-zone -maccumulate-outgoing-args
 LDFLAGS = -shared -Bsymbolic $(LIB_DIRS) -T$(LDS)
 LDLIBS  = -lgnuefi -lefi

@@ -29,10 +29,30 @@
 #define _ERROR 3
 
 #ifndef LOG_LEVEL
-#define LOG_LEVEL _ERROR
+#define LOG_LEVEL _ERROR 
 #endif
 
-#define LOG(LEVEL, MSG, ...)                                                   \
-  if (LEVEL >= LOG_LEVEL) {                                                    \
-    Print(L#MSG, __VA_ARGS__)                                                  \
+#define LOG_DEBUG(MSG, ...)                                                    \
+  if (LOG_LEVEL <= _DEBUG) {                                                   \
+    Print(L"[ DEBUG ]: ");                                                     \
+    Print(MSG __VA_OPT__(, ) __VA_ARGS__);                                     \
+    Print(L"\n");                                                              \
+  }
+#define LOG_INFO(MSG, ...)                                                     \
+  if (LOG_LEVEL <= _INFO) {                                                    \
+    Print(L"[ INFO ]: ");                                                      \
+    Print(MSG __VA_OPT__(, ) __VA_ARGS__);                                     \
+    Print(L"\n");                                                              \
+  }
+#define LOG_WARNNING(MSG, ...)                                                 \
+  if (LOG_LEVEL <= _WARNNING) {                                                \
+    Print(L"[ WARNNING ]: ");                                                  \
+    Print(MSG __VA_OPT__(, ) __VA_ARGS__);                                     \
+    Print(L"\n");                                                              \
+  }
+#define LOG_ERROR(MSG, ...)                                                    \
+  if (LOG_LEVEL <= _ERROR) {                                                   \
+    Print(L"[ ERROR ]: ");                                                     \
+    Print(MSG __VA_OPT__(, ) __VA_ARGS__);                                     \
+    Print(L"\n");                                                              \
   }
