@@ -1,12 +1,14 @@
 global Check_long_mode_supported
 
 Check_long_mode_supported:
+  ; push these reg because they are used by the procedure
   push  rbx
   push  rdx
-  pushf
+  ; check if the cpu supports cpuid instruction
   pushf
   pop   rax
-  and   rax, 0xFFFFFFFFFF2FFFFF
+  and   rax, 0xFFFFFFFFFFDFFFFF ; flip the 21th bit
+  push rax
   popf
   pushf
   pop   rbx
@@ -41,3 +43,4 @@ long_mode_not_supported:
   ret
 
 Enable_paging:
+
