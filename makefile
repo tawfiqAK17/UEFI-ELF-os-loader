@@ -1,6 +1,7 @@
 -include .env
 
 CC       = gcc
+ASM			 = nasm
 LD       = ld
 OBJCOPY  = objcopy
 
@@ -22,18 +23,23 @@ CFLAGS  = $(INC_DIRS) -DLOG_LEVEL=$(LOG_LEVEL) -fpic -ffreestanding -fno-stack-p
 LDFLAGS = -shared -Bsymbolic $(LIB_DIRS) -T$(LDS)
 LDLIBS  = -lgnuefi -lefi
 
-SRC    = boot_loader.c
-OBJ    = $(SRC:.c=.o)
-SO     = boot_loader.so
-TARGET = BOOTX64.EFI
+SRC     = boot_loader.c
+ASM_SRC =  enable_paging.asm
+OBJ     = $(SRC:.c=.o)
+ASM_OBJ = $(ASM_SRC:.asm=.o)
+SO      = boot_loader.so
+TARGET  = BOOTX64.EFI
 
 all: $(TARGET)
+
+$(ASM_OBJ): $(ASM_SRC)
+	$(ASM) -f elf64 $(ASM_SRC) -o $(ASM_OBJ)
 
 $(OBJ): $(SRC)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(SO): $(OBJ)
-	$(LD) $(LDFLAGS) $(CRT0) $(OBJ) -o $@ $(LDLIBS)
+$(SO): $(OBJ) $(ASM_OBJ)
+	$(LD) $(LDFLAGS) $(CRT0) $(OBJ) $(ASM_OBJ) -o $@ $(LDLIBS)
 
 $(TARGET): $(SO)
 	$(OBJCOPY) -j .text -j .sdata -j .data -j .rodata -j .dynamic -j .dynsym -j .rel \
@@ -43,6 +49,6 @@ $(TARGET): $(SO)
 	    $< $@
 
 clean:
-	rm -f $(OBJ) $(SO) $(TARGET)
+	rm -f $(OBJ) $(ASM_OBJ) $(SO) $(TARGET)
 
 .PHONY: all clean

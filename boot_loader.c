@@ -1,11 +1,10 @@
 #include "boot_loader.h"
 #include "efibind.h"
-#include "eficon.h"
 #include "efidef.h"
 #include "efierr.h"
 #include "efilib.h"
-#include "efipoint.h"
 #include "elf_parser.h"
+#include <sys/types.h>
 
 EFI_STATUS load_and_map_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
                                 UINT64 p_memsz, VOID *kernel_pages,
@@ -26,6 +25,7 @@ EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
 
 EFI_STATUS create_pt(UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
                      EFI_PHYSICAL_ADDRESS *out_pt_ph_addr, UINT16 flags);
+extern uint Check_long_mode_supported();
 EFI_STATUS
 EFIAPI
 efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
@@ -183,15 +183,16 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
 
     // TODO: add the invalide class case
   }
-  EFI_SIMPLE_TEXT_OUT_PROTOCOL *console;
-  status =
-      uefi_call_wrapper(BS->LocateProtocol, 3, &gEfiSimpleTextOutProtocolGuid,
-                        NULL, (VOID **)&console);
-  if (EFI_ERROR(status)) {
-    LOG_ERROR(L"failed to locat simple text output protocol, status code: %u",
-              status);
+
+  uint long_mode_ret = Check_long_mode_supported();
+  if (long_mode_ret == 1) {
+    LOG_ERROR(L"the cpu does not support cpuid instruction");
+  }
+  if (long_mode_ret == 2) {
+    LOG_ERROR(L"the cpu does not support long mode addressing");
   }
 
+  uefi_call_wrapper(BS->Stall, 1, 100000000);
   return EFI_SUCCESS;
 }
 
@@ -261,8 +262,9 @@ EFI_STATUS load_and_map_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
 
   for (UINTN i = 0; i < pages; i++) {
     LOG_DEBUG(L"mapping page number %d/%d", i + 1, pages);
-    status = insert_pt_entry(pml4, ph_addr + (i * EFI_PAGE_SIZE),
-                             first_page_vert_addr + (i * EFI_PAGE_SIZE), P | R_W);
+    status =
+        insert_pt_entry(pml4, ph_addr + (i * EFI_PAGE_SIZE),
+                        first_page_vert_addr + (i * EFI_PAGE_SIZE), P | R_W);
     if (EFI_ERROR(status)) {
       return status;
     }
@@ -382,5 +384,9 @@ EFI_STATUS create_pt(UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
 
   // add the flags to the page physical addr and write it to the PT
   out_pt_ph_addr[pt_idx] = (physical_addr << 12) | flags;
+  return EFI_SUCCESS;
+}
+
+EFI_STATUS activate_long_mode_paging(EFI_PHYSICAL_ADDRESS pml4_addr) {
   return EFI_SUCCESS;
 }
