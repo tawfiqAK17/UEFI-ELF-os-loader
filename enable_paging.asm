@@ -1,4 +1,4 @@
-global _EnablePaging
+global Check_long_mode_supported
 
 Check_long_mode_supported:
   push  rbx
@@ -31,12 +31,13 @@ Check_long_mode_supported:
 cpuid_not_supported:
   pop   rdx
   pop   rbx
-  mov   eax, 1
+  mov   rax, 1
   ret
 
 long_mode_not_supported:
   pop   rdx
   pop   rbx
-  mov   eax, 2
+  mov   rax, 2
   ret
 
+Enable_paging:
