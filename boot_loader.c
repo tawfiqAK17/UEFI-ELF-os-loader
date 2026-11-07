@@ -18,12 +18,13 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
                            EFI_VIRTUAL_ADDRESS virtual_addr, UINT16 flags);
 
 EFI_STATUS create_pdpt(UINT16 pdpt_idx, UINT16 pd_idx, UINT16 pt_idx,
-                       EFI_VIRTUAL_ADDRESS vr_addr,
+                       EFI_PHYSICAL_ADDRESS physical_addr,
                        EFI_PHYSICAL_ADDRESS *out_pdpt_ph_addr, UINT16 flags);
-EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
+EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx,
+                     EFI_PHYSICAL_ADDRESS physical_addr,
                      EFI_PHYSICAL_ADDRESS *out_pd_ph_addr, UINT16 flags);
 
-EFI_STATUS create_pt(UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
+EFI_STATUS create_pt(UINT16 pt_idx, EFI_PHYSICAL_ADDRESS physical_addr,
                      EFI_PHYSICAL_ADDRESS *out_pt_ph_addr, UINT16 flags);
 extern uint Check_long_mode_supported();
 EFI_STATUS
@@ -192,6 +193,16 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
     LOG_ERROR(L"the cpu does not support long mode addressing");
   }
 
+  EFI_PHYSICAL_ADDRESS trampoline_addr;
+  insert_pt_entry(pml4, trampoline_addr, trampoline_addr, R_W | P);
+  VOID (*trampoline)(EFI_PHYSICAL_ADDRESS pml4,
+                     EFI_VIRTUAL_ADDRESS kernel_entry) =
+      (VOID *)trampoline_addr;
+
+Print(L"calling the tranpoline...");
+  trampoline(pml4, entry((VOID *)kernel_file));
+Print(L"tranpoline was called");
+
   uefi_call_wrapper(BS->Stall, 1, 100000000);
   return EFI_SUCCESS;
 }
@@ -301,7 +312,7 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
           // TODO: page already mapped
         } else {
           EFI_PHYSICAL_ADDRESS pt_ph_addr;
-          status = create_pt(pt_idx, virtual_addr, &pt_ph_addr, flags);
+          status = create_pt(pt_idx, physical_addr, &pt_ph_addr, flags);
           if (EFI_ERROR(status)) {
             return status;
           }
@@ -310,7 +321,7 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
         }
       } else {
         EFI_PHYSICAL_ADDRESS pd_ph_addr;
-        status = create_pd(pd_idx, pt_idx, virtual_addr, &pd_ph_addr, flags);
+        status = create_pd(pd_idx, pt_idx, physical_addr, &pd_ph_addr, flags);
         if (EFI_ERROR(status)) {
           return status;
         }
@@ -319,7 +330,7 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
       }
     } else {
       EFI_PHYSICAL_ADDRESS pdpt_ph_addr;
-      status = create_pdpt(pdpt_idx, pd_idx, pt_idx, virtual_addr,
+      status = create_pdpt(pdpt_idx, pd_idx, pt_idx, physical_addr,
                            &pdpt_ph_addr, flags);
       if (EFI_ERROR(status)) {
         return status;
@@ -332,7 +343,7 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
 }
 
 EFI_STATUS create_pdpt(UINT16 pdpt_idx, UINT16 pd_idx, UINT16 pt_idx,
-                       EFI_VIRTUAL_ADDRESS vr_addr,
+                       EFI_PHYSICAL_ADDRESS physical_addr,
                        EFI_PHYSICAL_ADDRESS *out_pdpt_ph_addr, UINT16 flags) {
 
   EFI_STATUS status;
@@ -341,14 +352,15 @@ EFI_STATUS create_pdpt(UINT16 pdpt_idx, UINT16 pd_idx, UINT16 pt_idx,
     return status;
   }
   EFI_PHYSICAL_ADDRESS pd_ph_addr;
-  status = create_pd(pd_idx, pt_idx, vr_addr, &pd_ph_addr, flags);
+  status = create_pd(pd_idx, pt_idx, physical_addr, &pd_ph_addr, flags);
   if (EFI_ERROR(status)) {
     return status;
   }
   out_pdpt_ph_addr[pdpt_idx] = (pd_ph_addr << 12) | flags;
   return EFI_SUCCESS;
 }
-EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
+EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx,
+                     EFI_PHYSICAL_ADDRESS physical_addr,
                      EFI_PHYSICAL_ADDRESS *out_pd_ph_addr, UINT16 flags) {
 
   EFI_STATUS status;
@@ -358,7 +370,7 @@ EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
   }
   EFI_PHYSICAL_ADDRESS pt_ph_addr;
 
-  status = create_pt(pt_idx, vr_addr, &pt_ph_addr, flags);
+  status = create_pt(pt_idx, physical_addr, &pt_ph_addr, flags);
   if (EFI_ERROR(status)) {
     return status;
   }
@@ -366,18 +378,11 @@ EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
   return EFI_SUCCESS;
 }
 
-EFI_STATUS create_pt(UINT16 pt_idx, EFI_VIRTUAL_ADDRESS vr_addr,
+EFI_STATUS create_pt(UINT16 pt_idx, EFI_PHYSICAL_ADDRESS physical_addr,
                      EFI_PHYSICAL_ADDRESS *out_pt_ph_addr, UINT16 flags) {
   EFI_STATUS status;
   // allocate the table page
   status = allocate_empty_page(out_pt_ph_addr);
-  if (EFI_ERROR(status)) {
-    return status;
-  }
-
-  // allocate the page that maps to the virtual addr
-  EFI_PHYSICAL_ADDRESS physical_addr;
-  status = allocate_empty_page(&physical_addr);
   if (EFI_ERROR(status)) {
     return status;
   }

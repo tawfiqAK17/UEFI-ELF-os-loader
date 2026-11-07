@@ -1,4 +1,5 @@
 global Check_long_mode_supported
+global Enable_paging
 
 Check_long_mode_supported:
   ; push these reg because they are used by the procedure
@@ -43,4 +44,28 @@ long_mode_not_supported:
   ret
 
 Enable_paging:
+  push  r8
+  push  r9
+  ; set PE(0) and PG(31) in cr0
+  mov   r8, cr0
+  mov   r9, 0x0000000080000001 
+  or    r8, r9
+  mov   cr0, r8
+
+  ; set PAE(5) in cr4
+  mov   r8, cr4
+  mov   r9, 0x0000000000000020
+  or    r8, r9
+  mov   cr4, r8
+
+  ; set LME(8) in IA32_EFER
+  mov ecx, 0xC0000080
+  rdmsr
+  or  eax, 0x00000100
+  wdmsr
+  pop r9
+  pop r8
+  ret
+
+
 
