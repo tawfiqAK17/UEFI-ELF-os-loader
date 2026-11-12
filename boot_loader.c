@@ -26,7 +26,12 @@ EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx,
 
 EFI_STATUS create_pt(UINT16 pt_idx, EFI_PHYSICAL_ADDRESS physical_addr,
                      EFI_PHYSICAL_ADDRESS *out_pt_ph_addr, UINT16 flags);
+
+EFI_STATUS create_pt_entry(EFI_PHYSICAL_ADDRESS physical_addr,
+                           EFI_PHYSICAL_ADDRESS *out_pt_entry_ph_addr,
+                           UINT16 flags);
 extern uint Check_long_mode_supported();
+extern void Enable_paging();
 EFI_STATUS
 EFIAPI
 efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
@@ -297,47 +302,56 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
 
   EFI_PHYSICAL_ADDRESS *pml4_ph_addr = ((EFI_PHYSICAL_ADDRESS *)pml4);
   if (pml4_ph_addr[pml4_idx] & P) {
-    LOG_DEBUG(L"pml4 entry already exist: 0x%016llx", pml4_ph_addr);
+    LOG_DEBUG(L"pml4 entry already exist: 0x%016llx", pml4_ph_addr[pml4_idx]);
     EFI_PHYSICAL_ADDRESS *pdpt_ph_addr =
-        ((EFI_PHYSICAL_ADDRESS *)pml4_ph_addr[pml4_idx]);
+        ((EFI_PHYSICAL_ADDRESS *)(pml4_ph_addr[pml4_idx] >> 12));
+    LOG_DEBUG(L"pdpt entry already exist: 0x%016llx", pdpt_ph_addr[pdpt_idx]);
     if (pdpt_ph_addr[pdpt_idx] & P) {
       LOG_DEBUG(L"pdpt entry already exist: 0x%016llx", pdpt_ph_addr);
       EFI_PHYSICAL_ADDRESS *pd_ph_addr =
-          ((EFI_PHYSICAL_ADDRESS *)pdpt_ph_addr[pdpt_idx]);
+          ((EFI_PHYSICAL_ADDRESS *)(pdpt_ph_addr[pdpt_idx] >> 12));
       if (pd_ph_addr[pd_idx] & P) {
         LOG_DEBUG(L"pd entry already exist: 0x%016llx", pd_ph_addr);
         EFI_PHYSICAL_ADDRESS *pt_ph_addr =
-            ((EFI_PHYSICAL_ADDRESS *)pd_ph_addr[pd_idx]);
+            ((EFI_PHYSICAL_ADDRESS *)(pd_ph_addr[pd_idx] >> 12));
         if (pt_ph_addr[pt_idx] & P) {
           // TODO: page already mapped
         } else {
-          EFI_PHYSICAL_ADDRESS pt_ph_addr;
-          status = create_pt(pt_idx, physical_addr, &pt_ph_addr, flags);
+          EFI_PHYSICAL_ADDRESS pt_entry_ph_addr;
+          status = create_pt_entry(physical_addr, &pt_entry_ph_addr, flags);
           if (EFI_ERROR(status)) {
             return status;
           }
-          pd_ph_addr[pd_idx] = pt_ph_addr;
+          pd_ph_addr[pd_idx] = pt_entry_ph_addr;
           LOG_DEBUG(L"pt entry created: 0x%016llx", pt_ph_addr);
         }
       } else {
-        EFI_PHYSICAL_ADDRESS pd_ph_addr;
-        status = create_pd(pd_idx, pt_idx, physical_addr, &pd_ph_addr, flags);
+        EFI_PHYSICAL_ADDRESS pt_ph_addr;
+        status = create_pt(pt_idx, physical_addr, &pt_ph_addr, flags);
         if (EFI_ERROR(status)) {
           return status;
         }
-        pdpt_ph_addr[pdpt_idx] = pd_ph_addr;
-        LOG_DEBUG(L"pd entry created: 0x%016llx", pd_ph_addr);
+        pd_ph_addr[pd_idx] = (pt_ph_addr << 12) | flags;
+        LOG_DEBUG(L"pt created: 0x%016llx", pdpt_ph_addr[pd_idx]);
       }
     } else {
-      EFI_PHYSICAL_ADDRESS pdpt_ph_addr;
-      status = create_pdpt(pdpt_idx, pd_idx, pt_idx, physical_addr,
-                           &pdpt_ph_addr, flags);
+      EFI_PHYSICAL_ADDRESS pd_ph_addr;
+      status = create_pd(pd_idx, pt_idx, physical_addr, &pd_ph_addr, flags);
       if (EFI_ERROR(status)) {
         return status;
       }
-      pml4_ph_addr[pml4_idx] = pdpt_ph_addr;
-      LOG_DEBUG(L"pdpt entry created: 0x%016llx", pdpt_ph_addr);
+      pdpt_ph_addr[pdpt_idx] = (pd_ph_addr << 12) | flags;
+      LOG_DEBUG(L"pd created: 0x%016llx", pdpt_ph_addr[pdpt_idx]);
     }
+  } else {
+    EFI_PHYSICAL_ADDRESS pdpt_ph_addr;
+    status = create_pdpt(pdpt_idx, pd_idx, pt_idx, physical_addr, &pdpt_ph_addr,
+                         flags);
+    if (EFI_ERROR(status)) {
+      return status;
+    }
+    pml4_ph_addr[pml4_idx] = (pdpt_ph_addr << 12) | flags;
+    LOG_DEBUG(L"pdpt created: 0x%016llx", pml4_ph_addr[pml4_idx]);
   }
   return EFI_SUCCESS;
 }
@@ -356,7 +370,11 @@ EFI_STATUS create_pdpt(UINT16 pdpt_idx, UINT16 pd_idx, UINT16 pt_idx,
   if (EFI_ERROR(status)) {
     return status;
   }
-  out_pdpt_ph_addr[pdpt_idx] = (pd_ph_addr << 12) | flags;
+  ((EFI_PHYSICAL_ADDRESS *)(*out_pdpt_ph_addr))[pdpt_idx] =
+      (pd_ph_addr << 12) | flags;
+
+  LOG_DEBUG(L"pd created: 0x%016llx",
+            ((EFI_PHYSICAL_ADDRESS *)(*out_pdpt_ph_addr))[pdpt_idx]);
   return EFI_SUCCESS;
 }
 EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx,
@@ -374,7 +392,11 @@ EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx,
   if (EFI_ERROR(status)) {
     return status;
   }
-  out_pd_ph_addr[pd_idx] = (pt_ph_addr << 12) | flags;
+  ((EFI_PHYSICAL_ADDRESS *)(*out_pd_ph_addr))[pd_idx] =
+      (pt_ph_addr << 12) | flags;
+
+  LOG_DEBUG(L"pt created: 0x%016llx",
+            ((EFI_PHYSICAL_ADDRESS *)(*out_pd_ph_addr))[pd_idx]);
   return EFI_SUCCESS;
 }
 
@@ -387,11 +409,22 @@ EFI_STATUS create_pt(UINT16 pt_idx, EFI_PHYSICAL_ADDRESS physical_addr,
     return status;
   }
 
+  EFI_PHYSICAL_ADDRESS pt_entry_ph_addr;
+
+  status = create_pt_entry(physical_addr, &pt_entry_ph_addr, flags);
+  if (EFI_ERROR(status)) {
+    return status;
+  }
   // add the flags to the page physical addr and write it to the PT
-  out_pt_ph_addr[pt_idx] = (physical_addr << 12) | flags;
+  ((EFI_PHYSICAL_ADDRESS *)(*out_pt_ph_addr))[pt_idx] = pt_entry_ph_addr;
+
+  LOG_DEBUG(L"pt entry created: 0x%016llx", pt_entry_ph_addr);
   return EFI_SUCCESS;
 }
 
-EFI_STATUS activate_long_mode_paging(EFI_PHYSICAL_ADDRESS pml4_addr) {
+EFI_STATUS create_pt_entry(EFI_PHYSICAL_ADDRESS physical_addr,
+                           EFI_PHYSICAL_ADDRESS *out_pt_entry_ph_addr,
+                           UINT16 flags) {
+  *out_pt_entry_ph_addr = (physical_addr << 12) | flags;
   return EFI_SUCCESS;
 }
