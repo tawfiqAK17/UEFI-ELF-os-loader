@@ -199,16 +199,45 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
   }
 
   EFI_PHYSICAL_ADDRESS trampoline_addr;
-  insert_pt_entry(pml4, trampoline_addr, trampoline_addr, R_W | P);
+  LOG_INFO(L"allocating page for the trampoline");
+  status = allocate_empty_page(&trampoline_addr);
+  if (EFI_ERROR(status)) {
+    LOG_ERROR(L"failed to allocate page for the trampoline, status code: %u",
+              status);
+  }
+  uint8_t trampoline_code[] = {
+      0x0F, 0x22, 0xDF, // mov cr3, rdi
+      0xFF, 0xE6        // jmp rsi
+  };
+  LOG_INFO(L"copying the trampoline code to the allocated page");
+  status = uefi_call_wrapper(BS->CopyMem, 3, (VOID *)trampoline_addr,
+                             (VOID *)trampoline_code, sizeof(trampoline_code));
+  if (EFI_ERROR(status)) {
+    LOG_ERROR(L"failed to copy the trampoline code, status code: %u", status);
+  }
+
+  LOG_DEBUG(L"the trampoline is at address: 0x%016llx", trampoline_addr);
+
+  status = insert_pt_entry(pml4, trampoline_addr, trampoline_addr, R_W | P);
+  if (EFI_ERROR(status)) {
+    LOG_ERROR(L"failed to insert the trampoline page into the kernel page "
+              L"table, status code: %u",
+              status);
+  }
   VOID (*trampoline)(EFI_PHYSICAL_ADDRESS pml4,
                      EFI_VIRTUAL_ADDRESS kernel_entry) =
       (VOID *)trampoline_addr;
 
-Print(L"calling the tranpoline...");
-  trampoline(pml4, entry((VOID *)kernel_file));
-Print(L"tranpoline was called");
+  LOG_INFO(L"enabling paging");
+  Enable_paging();
 
-  uefi_call_wrapper(BS->Stall, 1, 100000000);
+  EFI_VIRTUAL_ADDRESS k_entry = entry((VOID *)kernel_pages);
+  LOG_DEBUG(L"calling the tranpoline with params pml4_addr: 0x%016llx and "
+            L"kernel_entry: 0x%016llx",
+            pml4, k_entry);
+
+  trampoline(pml4, k_entry);
+
   return EFI_SUCCESS;
 }
 
