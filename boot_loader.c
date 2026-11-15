@@ -304,16 +304,15 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
   if (pml4_ph_addr[pml4_idx] & P) {
     LOG_DEBUG(L"pml4 entry already exist: 0x%016llx", pml4_ph_addr[pml4_idx]);
     EFI_PHYSICAL_ADDRESS *pdpt_ph_addr =
-        ((EFI_PHYSICAL_ADDRESS *)(pml4_ph_addr[pml4_idx] >> 12));
-    LOG_DEBUG(L"pdpt entry already exist: 0x%016llx", pdpt_ph_addr[pdpt_idx]);
+        ((EFI_PHYSICAL_ADDRESS *)(pml4_ph_addr[pml4_idx] & ~flags));
     if (pdpt_ph_addr[pdpt_idx] & P) {
-      LOG_DEBUG(L"pdpt entry already exist: 0x%016llx", pdpt_ph_addr);
+      LOG_DEBUG(L"pdpt entry already exist: 0x%016llx", pdpt_ph_addr[pdpt_idx]);
       EFI_PHYSICAL_ADDRESS *pd_ph_addr =
-          ((EFI_PHYSICAL_ADDRESS *)(pdpt_ph_addr[pdpt_idx] >> 12));
+          ((EFI_PHYSICAL_ADDRESS *)(pdpt_ph_addr[pdpt_idx] & ~flags));
       if (pd_ph_addr[pd_idx] & P) {
-        LOG_DEBUG(L"pd entry already exist: 0x%016llx", pd_ph_addr);
+        LOG_DEBUG(L"pd entry already exist: 0x%016llx", pdpt_ph_addr[pdpt_idx]);
         EFI_PHYSICAL_ADDRESS *pt_ph_addr =
-            ((EFI_PHYSICAL_ADDRESS *)(pd_ph_addr[pd_idx] >> 12));
+            ((EFI_PHYSICAL_ADDRESS *)(pd_ph_addr[pd_idx] & ~flags));
         if (pt_ph_addr[pt_idx] & P) {
           // TODO: page already mapped
         } else {
@@ -331,8 +330,8 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
         if (EFI_ERROR(status)) {
           return status;
         }
-        pd_ph_addr[pd_idx] = (pt_ph_addr << 12) | flags;
-        LOG_DEBUG(L"pt created: 0x%016llx", pdpt_ph_addr[pd_idx]);
+        pd_ph_addr[pd_idx] = pt_ph_addr | flags;
+        LOG_DEBUG(L"pt created: 0x%016llx", pd_ph_addr[pd_idx]);
       }
     } else {
       EFI_PHYSICAL_ADDRESS pd_ph_addr;
@@ -340,7 +339,7 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
       if (EFI_ERROR(status)) {
         return status;
       }
-      pdpt_ph_addr[pdpt_idx] = (pd_ph_addr << 12) | flags;
+      pdpt_ph_addr[pdpt_idx] = pd_ph_addr | flags;
       LOG_DEBUG(L"pd created: 0x%016llx", pdpt_ph_addr[pdpt_idx]);
     }
   } else {
@@ -350,7 +349,7 @@ EFI_STATUS insert_pt_entry(EFI_PHYSICAL_ADDRESS pml4,
     if (EFI_ERROR(status)) {
       return status;
     }
-    pml4_ph_addr[pml4_idx] = (pdpt_ph_addr << 12) | flags;
+    pml4_ph_addr[pml4_idx] = pdpt_ph_addr | flags;
     LOG_DEBUG(L"pdpt created: 0x%016llx", pml4_ph_addr[pml4_idx]);
   }
   return EFI_SUCCESS;
@@ -370,8 +369,7 @@ EFI_STATUS create_pdpt(UINT16 pdpt_idx, UINT16 pd_idx, UINT16 pt_idx,
   if (EFI_ERROR(status)) {
     return status;
   }
-  ((EFI_PHYSICAL_ADDRESS *)(*out_pdpt_ph_addr))[pdpt_idx] =
-      (pd_ph_addr << 12) | flags;
+  ((EFI_PHYSICAL_ADDRESS *)(*out_pdpt_ph_addr))[pdpt_idx] = pd_ph_addr | flags;
 
   LOG_DEBUG(L"pd created: 0x%016llx",
             ((EFI_PHYSICAL_ADDRESS *)(*out_pdpt_ph_addr))[pdpt_idx]);
@@ -392,8 +390,7 @@ EFI_STATUS create_pd(UINT16 pd_idx, UINT16 pt_idx,
   if (EFI_ERROR(status)) {
     return status;
   }
-  ((EFI_PHYSICAL_ADDRESS *)(*out_pd_ph_addr))[pd_idx] =
-      (pt_ph_addr << 12) | flags;
+  ((EFI_PHYSICAL_ADDRESS *)(*out_pd_ph_addr))[pd_idx] = pt_ph_addr | flags;
 
   LOG_DEBUG(L"pt created: 0x%016llx",
             ((EFI_PHYSICAL_ADDRESS *)(*out_pd_ph_addr))[pd_idx]);
@@ -425,6 +422,6 @@ EFI_STATUS create_pt(UINT16 pt_idx, EFI_PHYSICAL_ADDRESS physical_addr,
 EFI_STATUS create_pt_entry(EFI_PHYSICAL_ADDRESS physical_addr,
                            EFI_PHYSICAL_ADDRESS *out_pt_entry_ph_addr,
                            UINT16 flags) {
-  *out_pt_entry_ph_addr = (physical_addr << 12) | flags;
+  *out_pt_entry_ph_addr = physical_addr | flags;
   return EFI_SUCCESS;
 }

@@ -14,10 +14,10 @@
 #define G 0x0100
 
 //
-#define PML4_SHIFT 38
-#define PDPT_SHIFT 29
-#define PD_SHIFT 20
-#define PT_SHIFT 11
+#define PML4_SHIFT 39
+#define PDPT_SHIFT 30
+#define PD_SHIFT 21
+#define PT_SHIFT 12
 
 //
 #define PAGE_TABLE_IDX_MASK 0x01FF
