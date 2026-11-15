@@ -4,6 +4,7 @@
 #include "efierr.h"
 #include "efilib.h"
 #include "elf_parser.h"
+#include <stdint.h>
 #include <sys/types.h>
 
 EFI_STATUS load_and_map_segment(UINT64 p_type, UINT64 p_offset, UINT64 p_filesz,
@@ -236,6 +237,40 @@ efi_main(EFI_HANDLE ImageHandle, EFI_SYSTEM_TABLE *SystemTable) {
             L"kernel_entry: 0x%016llx",
             pml4, k_entry);
 
+  
+  UINTN mapkey;
+  UINTN descriptor_size;
+  UINT32 descriptor_version;
+  UINTN memory_map_size = 0;
+  EFI_MEMORY_DESCRIPTOR *memory_map;
+
+  LOG_INFO(L"getting the memory map size");
+  // this first call is supposed to fail, its purpose is to get the memory_map_size
+  uefi_call_wrapper(BS->GetMemoryMap, 5, &memory_map_size, memory_map, &mapkey, &descriptor_size, descriptor_version);
+  LOG_DEBUG(L"memory map size : %u", memory_map_size);
+  
+  memory_map_size += descriptor_size * 2; 
+  LOG_DEBUG(L"memory map size with an extra 2 descriptors is: %u", memory_map_size);
+  UINTN memory_map_size_in_pages = EFI_SIZE_TO_PAGES(memory_map_size);// adding one page because the pages that will be 
+                                                                        // allocated for the memory map will change the size 
+  LOG_DEBUG(L"number of allocated pages for the memory map: %u", memory_map_size_in_pages);
+  
+  LOG_INFO(L"allocating pages for the memory map");
+  status = uefi_call_wrapper(BS->AllocatePages, 4, AllocateAnyPages, EfiLoaderData, memory_map_size_in_pages, (VOID *)(&memory_map));
+  if (EFI_ERROR(status)) {
+    LOG_ERROR(L"failed to allocate pages for the memory map, status code: %u", status);
+  }
+ // memory_map_size *= 2; 
+  status = uefi_call_wrapper(BS->GetMemoryMap, 5, &memory_map_size, memory_map, &mapkey, &descriptor_size, descriptor_version);
+  if (EFI_ERROR(status)) {
+    LOG_ERROR(L"failed to get the memory map, status code: %u", status);
+  }
+
+  LOG_INFO(L"exiting the boot services");
+  uefi_call_wrapper(BS->ExitBootServices, 2, ImageHandle, mapkey);
+  if (EFI_ERROR(status)) {
+    LOG_ERROR(L"failed to exit boot services, status code: %u", status);
+  }
   trampoline(pml4, k_entry);
 
   return EFI_SUCCESS;
