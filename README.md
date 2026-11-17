@@ -58,3 +58,8 @@ make clean
 ```
 
 `run.sh` creates `disk.img` with `kernel.bin` and `BOOTX64.EFI`, then boots QEMU with OVMF. Serial output goes to `boot.log`; QEMU interrupt/CPU-reset logs go to `qemu.log`. GDB can attach on `:1234`.
+
+
+## ToDos
+- [ ] share the memory map pages with the kernel.
+- [ ] share the kernel memory info with the kernel.
