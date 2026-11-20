@@ -61,5 +61,6 @@ make clean
 
 
 ## ToDos
+- [ ] flags of the kernel loaded segments pages should be extracted from its program header.
 - [ ] share the memory map pages with the kernel.
 - [ ] share the kernel memory info with the kernel.
